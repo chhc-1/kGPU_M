@@ -102,6 +102,9 @@ mutable struct flow_measures{Arraytype}
     dissipation_rate::Union{Float64, Arraytype} # CUDA.CuArray{Float64, 1};
     EIR::Union{Float64, Arraytype} #CUDA.CuArray{Float64, 1}; # energy input rate
 
+    weighting::Float64
+    #weighting_arr::Union{Float64, Arraytype} # weighting array for trapezoidal integration
+
     # temporary variables
     u::Union{Float64, Arraytype} #CUDA.CuArray{Float64, 2};
     u_hat::Union{Float64, Arraytype} #CUDA.CuArray{ComplexF64, 2};
@@ -118,24 +121,37 @@ mutable struct flow_measures{Arraytype}
     
     D_arr::Union{Float64, Arraytype} #CUDA.CuArray{Float64, 2};
     I_arr::Union{Float64, Arraytype} #CUDA.CuArray{Float64, 2};
-    
+
+    #weighted_D_arr::Union{Float64, Arraytype}
+    #weighted_I_arr::Union{Float64, Arraytype}
+
     function flow_measures{Arraytype}(solver1::solver) where Arraytype
-        new(repeat([0.0], solver1.n_iter), 
-            repeat([0.0], solver1.n_iter), 
-            repeat([0.0], solver1.x_len, solver1.y_len),
-            repeat([0.0 + 0.0*im], solver1.N1r, solver1.N2),
-            repeat([0.0], solver1.x_len, solver1.y_len),
-            repeat([0.0 + 0.0*im], solver1.N1r, solver1.N2),
-            repeat([0.0], solver1.x_len, solver1.y_len),
-            repeat([0.0 + 0.0*im], solver1.N1r, solver1.N2),
-            repeat([0.0], solver1.x_len, solver1.y_len),
-            repeat([0.0 + 0.0*im], solver1.N1r, solver1.N2),
-            repeat([0.0], solver1.x_len, solver1.y_len),
-            repeat([0.0 + 0.0*im], solver1.N1r, solver1.N2),
-            repeat([0.0], solver1.x_len, solver1.y_len),
-            repeat([0.0 + 0.0*im], solver1.N1r, solver1.N2),
-            repeat([0.0], solver1.x_len, solver1.y_len),
-            repeat([0.0], solver1.x_len, solver1.y_len));
+        CUDA.@allowscalar dx = solver1.x_arr[2, 1] - solver1.x_arr[1, 1];
+        CUDA.@allowscalar dy = solver1.y_arr[1, 2] - solver1.y_arr[1, 1];
+        node_weighting = dx*dy;
+        #weight1 = Arraytype{Float64}(repeat([node_weighting], solver1.x_len, solver1.y_len));
+        #view(weight1, 1:solver1.x_len, 1) .*= 0.5;
+        #view(weight1, 1:solver1.x_len, solver1.y_len) .*= 0.5;
+        #view(weight1, 1, 1:solver1.y_len) .*= 0.5;
+        #view(weight1, solver1.x_len, 1:solver1.y_len) .*= 0.5;
+
+        new{Arraytype}(Arraytype{Float64}(repeat([0.0], solver1.n_iter)), 
+            Arraytype{Float64}(repeat([0.0], solver1.n_iter)), 
+            node_weighting, #Arraytype{Float64}(weight1),
+            Arraytype{Float64}(repeat([0.0], solver1.x_len, solver1.y_len)),
+            Arraytype{ComplexF64}(repeat([0.0 + 0.0*im], solver1.N1r_padded, solver1.N2_padded)),
+            Arraytype{Float64}(repeat([0.0], solver1.x_len, solver1.y_len)),
+            Arraytype{ComplexF64}(repeat([0.0 + 0.0*im], solver1.N1r_padded, solver1.N2_padded)),
+            Arraytype{Float64}(repeat([0.0], solver1.x_len, solver1.y_len)),
+            Arraytype{ComplexF64}(repeat([0.0 + 0.0*im], solver1.N1r_padded, solver1.N2_padded)),
+            Arraytype{Float64}(repeat([0.0], solver1.x_len, solver1.y_len)),
+            Arraytype{ComplexF64}(repeat([0.0 + 0.0*im], solver1.N1r_padded, solver1.N2_padded)),
+            Arraytype{Float64}(repeat([0.0], solver1.x_len, solver1.y_len)),
+            Arraytype{ComplexF64}(repeat([0.0 + 0.0*im], solver1.N1r_padded, solver1.N2_padded)),
+            Arraytype{Float64}(repeat([0.0], solver1.x_len, solver1.y_len)),
+            Arraytype{ComplexF64}(repeat([0.0 + 0.0*im], solver1.N1r_padded, solver1.N2_padded)),
+            Arraytype{Float64}(repeat([0.0], solver1.x_len, solver1.y_len)),
+            Arraytype{Float64}(repeat([0.0], solver1.x_len, solver1.y_len)));
     end;
 end;
 
@@ -275,6 +291,19 @@ function iter(solver1::solver, iteration::Int64)
     return nothing;
 end;
 
+function iter(solver1::solver, measures::flow_measures, iteration::Int64)
+    update(solver1);
+
+    CUDA.copyto!(solver1.ω_hat_prev, solver1.ω_hat_new);
+
+    CUDA.CUBLAS.mul!(solver1.ω_temp, solver1.irfft_plan_padded, solver1.ω_hat_new);
+    view(solver1.ω_arr, 1:solver1.x_len, 1:solver1.y_len, iteration) .= solver1.ω_temp;
+
+    calc_flow_measures_iter(solver1, measures, iteration);
+
+    return nothing;
+end;
+
 
 function calc_solver_base(solver1::solver{Arraytype}) where Arraytype
     
@@ -385,13 +414,13 @@ function calc_flow_measures(solver1::solver, measures::flow_measures, iter::Int6
     end;
     =#
 
-    measures.u_hat = im .* solver1.ω_hat_new .* solver1.ky ./ solver1.kxy2;
-    measures.v_hat = -im .* solver1.ω_hat_new .* solver1.kx ./ solver1.kxy2;
+    measures.u_hat .= im .* solver1.ω_hat_new .* solver1.ky ./ solver1.kxy2;
+    measures.v_hat .= -im .* solver1.ω_hat_new .* solver1.kx ./ solver1.kxy2;
 
-    measures.dudx_hat = im .* solver1.kx .* measures.u_hat;
-    measures.dudy_hat = im .* solver1.ky .* measures.u_hat;
-    measures.dvdx_hat = im .* solver1.kx .* measures.v_hat;
-    measures.dvdy_hat = im .* solver1.ky .* measures.v_hat;
+    measures.dudx_hat .= im .* solver1.kx .* measures.u_hat;
+    measures.dudy_hat .= im .* solver1.ky .* measures.u_hat;
+    measures.dvdx_hat .= im .* solver1.kx .* measures.v_hat;
+    measures.dvdy_hat .= im .* solver1.ky .* measures.v_hat;
 
     #measures.u_hat[1, 1] = 0;
     #measures.v_hat[1, 1] = 0;
@@ -413,6 +442,58 @@ function calc_flow_measures(solver1::solver, measures::flow_measures, iter::Int6
     
     measures.dissipation_rate[iter] = 1 / (4 * pi^2 * solver1.Re) * NumericalIntegration.integrate((solver1.x_arr, solver1.y_arr), measures.D_arr);
     measures.EIR[iter] = 1 / (2pi)^2 * NumericalIntegration.integrate((solver1.x_arr, solver1.y_arr), measures.I_arr);
+end;
+
+function calc_flow_measures_iter(solver1::solver, measures::flow_measures, iter::Int64)
+    #CUDA.CUBLAS.mul!(solver1.ω_hat_new, solver1.rfft_plan, view(solver1.ω_arr, 1:solver1.x_len, 1:solver1.y_len, iter));
+    #=
+    for i in 1:solver1.N1r
+        for j in 1:solver1.N2
+            measures.u_hat[i, j] = im * solver1.ω_hat_new[i, j] * (solver1.ky[j] / (solver1.kx[i]^2 + solver1.ky[j]^2));
+            measures.v_hat[i, j] = -im * solver1.ω_hat_new[i, j] * (solver1.kx[i] / (solver1.kx[i]^2 + solver1.ky[j]^2));
+
+            measures.dudx_hat[i, j] = im * solver1.kx[i] * measures.u_hat[i, j];
+            measures.dudy_hat[i, j] = im * solver1.ky[j] * measures.u_hat[i, j];
+            measures.dvdx_hat[i, j] = im * solver1.kx[i] * measures.v_hat[i, j];
+            measures.dvdy_hat[i, j] = im * solver1.ky[j] * measures.v_hat[i, j];
+        end;
+    end;
+    =#
+
+    measures.u_hat .= im .* solver1.ω_hat_new .* solver1.ky ./ solver1.kxy2;
+    measures.v_hat .= -im .* solver1.ω_hat_new .* solver1.kx ./ solver1.kxy2;
+
+    measures.dudx_hat .= im .* solver1.kx .* measures.u_hat;
+    measures.dudy_hat .= im .* solver1.ky .* measures.u_hat;
+    measures.dvdx_hat .= im .* solver1.kx .* measures.v_hat;
+    measures.dvdy_hat .= im .* solver1.ky .* measures.v_hat;
+
+    #measures.u_hat[1, 1] = 0;
+    #measures.v_hat[1, 1] = 0;
+    #measures.dudx_hat[1, 1] = 0;
+    #measures.dudy_hat[1, 1] = 0;
+    #measures.dvdx_hat[1, 1] = 0;
+    #measures.dvdy_hat[1, 1] = 0;
+    
+    CUDA.CUBLAS.mul!(measures.u, solver1.irfft_plan_padded, measures.u_hat);
+    CUDA.CUBLAS.mul!(measures.v, solver1.irfft_plan_padded, measures.v_hat);
+    CUDA.CUBLAS.mul!(measures.dudx, solver1.irfft_plan_padded, measures.dudx_hat);
+    CUDA.CUBLAS.mul!(measures.dudy, solver1.irfft_plan_padded, measures.dudy_hat);
+    CUDA.CUBLAS.mul!(measures.dvdx, solver1.irfft_plan_padded, measures.dvdx_hat);
+    CUDA.CUBLAS.mul!(measures.dvdy, solver1.irfft_plan_padded, measures.dvdy_hat);
+
+    measures.D_arr = (measures.dudx).^2 + (measures.dudy).^2 + (measures.dvdx).^2 + (measures.dvdy).^2;
+    measures.I_arr = measures.u .* sin.(solver1.n .* solver1.y_arr);
+
+    #measures.weighted_D_arr = measures.D_arr .* measures.weighting; #measures.weighting_arr;
+    #measures.weighted_I_arr = measures.D_arr .* measures.weighting; #measures.weighting_arr;
+
+    view(dissipation_rate, iter) = 1 / (4 * pi^2 * solver1.Re) * measures.weighting * reduce(+, measures.weighted_D_arr);
+    view(EIR, iter) = 1 / (2pi)^2 * measures.weighting * reduce(+, measures.weighted_I_arr);
+    
+    #NumericalIntegration.integrate((solver1.x_arr, solver1.y_arr), measures.D_arr);
+    #measures.dissipation_rate[iter] = 1 / (4 * pi^2 * solver1.Re) * NumericalIntegration.integrate((solver1.x_arr, solver1.y_arr), measures.D_arr);
+    #measures.EIR[iter] = 1 / (2pi)^2 * NumericalIntegration.integrate((solver1.x_arr, solver1.y_arr), measures.I_arr);
 end;
 
 end # module kGPU_M

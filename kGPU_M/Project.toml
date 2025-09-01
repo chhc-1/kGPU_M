@@ -8,9 +8,11 @@ AbstractFFTs = "621f4979-c628-5d54-868e-fcf4e3e8185c"
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
+NumericalIntegration = "e7bfaba1-d571-5449-8927-abc22e82249b"
 
 [compat]
 AbstractFFTs = "1.5.0"
 Adapt = "4.3.0"
 CUDA = "5.8.3"
 FFTW = "1.9.0"
+NumericalIntegration = "0.3.4"
