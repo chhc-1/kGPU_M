@@ -305,6 +305,14 @@ function iter(solver1::solver, measures::flow_measures, iteration::Int64)
 end;
 
 
+function run(solver1::solver, measures::flow_measures, num_iters::Int64)
+    for i in 1:num_iters
+        iter(solver1, measures, solver1.current_iter);
+        solver1.current_iter += 1;
+    end;
+end;
+
+
 function calc_solver_base(solver1::solver{Arraytype}) where Arraytype
     
     #initialiase Fourier series terms
@@ -351,7 +359,7 @@ function init_solver(solver1::solver, dt::Float64, Re::Float64, n_iter::Int64, x
     solver1.dt = dt;
     solver1.Re = Re;
     solver1.n_iter = n_iter;
-    solver1.current_iter = 0;
+    solver1.current_iter = 1;
     solver1.x_len = size(x_arr, 1);
     solver1.y_len = size(y_arr, 1);
     solver1.x_arr = CUDA.CuArray{Float64}(repeat(x_arr, 1, solver1.y_len));
@@ -488,8 +496,8 @@ function calc_flow_measures_iter(solver1::solver, measures::flow_measures, iter:
     #measures.weighted_D_arr = measures.D_arr .* measures.weighting; #measures.weighting_arr;
     #measures.weighted_I_arr = measures.D_arr .* measures.weighting; #measures.weighting_arr;
 
-    view(dissipation_rate, iter) = 1 / (4 * pi^2 * solver1.Re) * measures.weighting * reduce(+, measures.weighted_D_arr);
-    view(EIR, iter) = 1 / (2pi)^2 * measures.weighting * reduce(+, measures.weighted_I_arr);
+    view(measures.dissipation_rate, iter) .= 1 / (4 * pi^2 * solver1.Re) * measures.weighting * reduce(+, measures.D_arr);
+    view(measures.EIR, iter) .= 1 / (2pi)^2 * measures.weighting * reduce(+, measures.I_arr);
     
     #NumericalIntegration.integrate((solver1.x_arr, solver1.y_arr), measures.D_arr);
     #measures.dissipation_rate[iter] = 1 / (4 * pi^2 * solver1.Re) * NumericalIntegration.integrate((solver1.x_arr, solver1.y_arr), measures.D_arr);
