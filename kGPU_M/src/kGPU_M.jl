@@ -364,12 +364,18 @@ function calc_solver_base(solver1::solver{Arraytype}) where Arraytype
     N2_idx_arr2_padded = N2_pad_idx:solver1.N2_padded;
     
     temp_x = Arraytype{Int64}([0:solver1.N1r_padded-1;]);
-    temp_y = Arraytype{Int64}([0:div(solver1.N2_padded, 2); -div(solver1.N2_padded, 2)+1:-1]);
+
+    if solver1.N2_padded % 2 == 0
+        temp_y = Arraytype{Int64}([0:div(solver1.N2_padded, 2); -div(solver1.N2_padded, 2)+1:-1]);
+    else
+        temp_y = Arraytype{Int64}([0:div(solver1.N2_padded, 2); -div(solver1.N2_padded, 2):-1]);
+    end;
+
     
     solver1.kx = Arraytype{Int64}(repeat(temp_x, 1, solver1.N2_padded));
     solver1.ky = Arraytype{Int64}(transpose(Array{Int64}(repeat(temp_y, 1, solver1.N1r_padded))));
     solver1.kxy2 = (solver1.kx).^2 + (solver1.ky).^2;
-    solver1.kxy2[1, 1] = 1;
+    CUDA.@allowscalar solver1.kxy2[1, 1] = 1;
     
     solver1.mask = Arraytype{Bool}(repeat([false], solver1.N1r_padded, solver1.N2_padded));
     view(solver1.mask, N1_idx_arr, N2_idx_arr1) .= true;
