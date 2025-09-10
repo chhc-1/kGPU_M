@@ -22,4 +22,3 @@ GPU_rfft_type32 = CUDA.CUFFT.CuFFTPlan{ComplexF32, Float32, -1, false, 2, 2, CUD
 GPU_rfft_type64 = CUDA.CUFFT.CuFFTPlan{ComplexF64, Float64, -1, false, 2, 2, CUDA.CuArray{ComplexF64, 2, CUDA.DeviceMemory}};
 GPU_irfft_type32 = AbstractFFTs.ScaledPlan{ComplexF64, CUDA.CUFFT.CuFFTPlan{Float32, ComplexF32, 1, false, 2, 2, CUDA.CuArray{ComplexF32, 2, CUDA.DeviceMemory}}, Float32}
 GPU_irfft_type64 = AbstractFFTs.ScaledPlan{ComplexF64, CUDA.CUFFT.CuFFTPlan{Float64, ComplexF64, 1, false, 2, 2, CUDA.CuArray{ComplexF64, 2, CUDA.DeviceMemory}}, Float64};
-

@@ -5,7 +5,7 @@ include("typedefs.jl")
 include("Fourier_array.jl")
 include("solver.jl")
 include("convection.jl")
-
+include("flow_measures.jl")
 
 function update(solver1::solver)
     calc_conv(solver1, solver1.ω_hat_prev, solver1.conv_prev);
