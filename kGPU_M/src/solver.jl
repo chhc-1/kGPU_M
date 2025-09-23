@@ -7,7 +7,7 @@ include("typedefs.jl")
 include("Fourier_array.jl")
 
 #=
-File containing mutable struct solver and the corresponding Adapt.adapt_structure function and external function to assign values to attributes of solver object
+File containing mutable struct solver and external function to assign values to attributes of solver object
 solver object contains all necessary information to run the simulation, 
 =#
 
@@ -125,8 +125,6 @@ if !isdefined(@__MODULE__, :init_solver)
         solver1.source_hat = Arraytype{ComplexF64}(source_hat);#convert(Arraytype, copy(source_hat));
 
         # initialise FFT plans
-        #solver1.rfft_plan_padded = FFTW.plan_rfft(solver1.u.pad); #CUDA.CUFFT.plan_rfft(solver1.u.pad);
-        #solver1.irfft_plan_padded = FFTW.plan_irfft(solver1.u.hat_padded, solver1.N1_padded); #CUDA.CUFFT.plan_irfft(solver1.u.hat_padded, solver1.N1_padded);
         if Arraytype == Array
             solver1.rfft_plan_padded = FFTW.plan_rfft(solver1.u.pad); #CUDA.CUFFT.plan_rfft(solver1.u.pad);
             solver1.irfft_plan_padded = FFTW.plan_irfft(solver1.u.hat_padded, solver1.N1_padded); #CUDA.CUFFT.plan_irfft(solver1.u.hat_padded, solver1.N1_padded);

@@ -2,6 +2,9 @@ include("typedefs.jl")
 include("Fourier_array.jl")
 include("solver.jl")
 
+#=
+File containing Adapt.adapt_structure function for the Fourier_array structure and solver structure
+=#
 
 function Adapt.adapt_structure(to, F_arr::Fourier_array)
     pad = Adapt.adapt(to, F_arr.pad);

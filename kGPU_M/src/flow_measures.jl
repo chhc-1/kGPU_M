@@ -36,11 +36,6 @@ if !isdefined(@__MODULE__, :flow_measures)
             CUDA.@allowscalar dx = solver1.x_arr[2, 1] - solver1.x_arr[1, 1];
             CUDA.@allowscalar dy = solver1.y_arr[1, 2] - solver1.y_arr[1, 1];
             node_weighting = dx*dy;
-            #weight1 = Arraytype{Float64}(repeat([node_weighting], solver1.x_len, solver1.y_len));
-            #view(weight1, 1:solver1.x_len, 1) .*= 0.5;
-            #view(weight1, 1:solver1.x_len, solver1.y_len) .*= 0.5;
-            #view(weight1, 1, 1:solver1.y_len) .*= 0.5;
-            #view(weight1, solver1.x_len, 1:solver1.y_len) .*= 0.5;
 
             new{Arraytype}(Arraytype{Float64}(repeat([0.0], solver1.n_iter)), 
                 Arraytype{Float64}(repeat([0.0], solver1.n_iter)), 
@@ -64,21 +59,9 @@ if !isdefined(@__MODULE__, :flow_measures)
 end;
 
 if !isdefined(@__MODULE__, :calc_flow_measures)
-    function calc_flow_measures(solver1::solver{Arraytype, rfft_t, irfft_t}, measures::flow_measures, iter::Int64) where {Arraytype, rfft_t, irfft_t}
-        CUDA.CUBLAS.mul!(solver1.ω_hat_new, solver1.rfft_plan, view(solver1.ω_arr, 1:solver1.x_len, 1:solver1.y_len, iter));
-        #=
-        for i in 1:solver1.N1r
-            for j in 1:solver1.N2
-                measures.u_hat[i, j] = im * solver1.ω_hat_new[i, j] * (solver1.ky[j] / (solver1.kx[i]^2 + solver1.ky[j]^2));
-                measures.v_hat[i, j] = -im * solver1.ω_hat_new[i, j] * (solver1.kx[i] / (solver1.kx[i]^2 + solver1.ky[j]^2));
-
-                measures.dudx_hat[i, j] = im * solver1.kx[i] * measures.u_hat[i, j];
-                measures.dudy_hat[i, j] = im * solver1.ky[j] * measures.u_hat[i, j];
-                measures.dvdx_hat[i, j] = im * solver1.kx[i] * measures.v_hat[i, j];
-                measures.dvdy_hat[i, j] = im * solver1.ky[j] * measures.v_hat[i, j];
-            end;
-        end;
-        =#
+    function calc_flow_measures(solver1::solver{Arraytype, rfft_t, irfft_t}, measures::flow_measures, iter::Int64, temp_arr::arr_type) where {Arraytype, rfft_t, irfft_t}
+        view(temp_arr, 1:solver1.N1_padded, 1:solver1.N2_padded) .= view(solver1.ω_arr, 1:solver1.N1_padded, 1:solver1.N2_padded, iter);
+        CUDA.CUBLAS.mul!(solver1.ω_hat_new, solver1.rfft_plan_padded, temp_arr);
 
         measures.u_hat .= im .* solver1.ω_hat_new .* solver1.ky ./ solver1.kxy2;
         measures.v_hat .= -im .* solver1.ω_hat_new .* solver1.kx ./ solver1.kxy2;
@@ -88,45 +71,25 @@ if !isdefined(@__MODULE__, :calc_flow_measures)
         measures.dvdx_hat .= im .* solver1.kx .* measures.v_hat;
         measures.dvdy_hat .= im .* solver1.ky .* measures.v_hat;
 
-        #measures.u_hat[1, 1] = 0;
-        #measures.v_hat[1, 1] = 0;
-        #measures.dudx_hat[1, 1] = 0;
-        #measures.dudy_hat[1, 1] = 0;
-        #measures.dvdx_hat[1, 1] = 0;
-        #measures.dvdy_hat[1, 1] = 0;
-        
-        CUDA.CUBLAS.mul!(measures.u, solver1.irfft_plan, measures.u_hat);
-        CUDA.CUBLAS.mul!(measures.v, solver1.irfft_plan, measures.v_hat);
-        CUDA.CUBLAS.mul!(measures.dudx, solver1.irfft_plan, measures.dudx_hat);
-        CUDA.CUBLAS.mul!(measures.dudy, solver1.irfft_plan, measures.dudy_hat);
-        CUDA.CUBLAS.mul!(measures.dvdx, solver1.irfft_plan, measures.dvdx_hat);
-        CUDA.CUBLAS.mul!(measures.dvdy, solver1.irfft_plan, measures.dvdy_hat);
+        CUDA.CUBLAS.mul!(measures.u, solver1.irfft_plan_padded, measures.u_hat);
+        CUDA.CUBLAS.mul!(measures.v, solver1.irfft_plan_padded, measures.v_hat);
+        CUDA.CUBLAS.mul!(measures.dudx, solver1.irfft_plan_padded, measures.dudx_hat);
+        CUDA.CUBLAS.mul!(measures.dudy, solver1.irfft_plan_padded, measures.dudy_hat);
+        CUDA.CUBLAS.mul!(measures.dvdx, solver1.irfft_plan_padded, measures.dvdx_hat);
+        CUDA.CUBLAS.mul!(measures.dvdy, solver1.irfft_plan_padded, measures.dvdy_hat);
 
         measures.D_arr = (measures.dudx).^2 + (measures.dudy).^2 + (measures.dvdx).^2 + (measures.dvdy).^2;
         measures.I_arr = measures.u .* sin.(solver1.n .* solver1.y_arr);
-
         
-        measures.dissipation_rate[iter] = 1 / (4 * pi^2 * solver1.Re) * NumericalIntegration.integrate((solver1.x_arr, solver1.y_arr), measures.D_arr);
-        measures.EIR[iter] = 1 / (2pi)^2 * NumericalIntegration.integrate((solver1.x_arr, solver1.y_arr), measures.I_arr);
+        view(measures.dissipation_rate, iter) .= 1 / (4 * pi^2 * solver1.Re) * measures.weighting * reduce(+, measures.D_arr);
+        view(measures.EIR, iter) .= 1 / (2pi)^2 * measures.weighting * reduce(+, measures.I_arr);
+        
     end;
 end;
 
 if !isdefined(@__MODULE__, :calc_flow_measures_iter)
+    # function to calculate flow measures whilst solving
     function calc_flow_measures_iter(solver1::solver, measures::flow_measures, iter::Int64)
-        #CUDA.CUBLAS.mul!(solver1.ω_hat_new, solver1.rfft_plan, view(solver1.ω_arr, 1:solver1.x_len, 1:solver1.y_len, iter));
-        #=
-        for i in 1:solver1.N1r
-            for j in 1:solver1.N2
-                measures.u_hat[i, j] = im * solver1.ω_hat_new[i, j] * (solver1.ky[j] / (solver1.kx[i]^2 + solver1.ky[j]^2));
-                measures.v_hat[i, j] = -im * solver1.ω_hat_new[i, j] * (solver1.kx[i] / (solver1.kx[i]^2 + solver1.ky[j]^2));
-
-                measures.dudx_hat[i, j] = im * solver1.kx[i] * measures.u_hat[i, j];
-                measures.dudy_hat[i, j] = im * solver1.ky[j] * measures.u_hat[i, j];
-                measures.dvdx_hat[i, j] = im * solver1.kx[i] * measures.v_hat[i, j];
-                measures.dvdy_hat[i, j] = im * solver1.ky[j] * measures.v_hat[i, j];
-            end;
-        end;
-        =#
 
         measures.u_hat .= im .* solver1.ω_hat_new .* solver1.ky ./ solver1.kxy2;
         measures.v_hat .= -im .* solver1.ω_hat_new .* solver1.kx ./ solver1.kxy2;
@@ -135,14 +98,7 @@ if !isdefined(@__MODULE__, :calc_flow_measures_iter)
         measures.dudy_hat .= im .* solver1.ky .* measures.u_hat;
         measures.dvdx_hat .= im .* solver1.kx .* measures.v_hat;
         measures.dvdy_hat .= im .* solver1.ky .* measures.v_hat;
-
-        #measures.u_hat[1, 1] = 0;
-        #measures.v_hat[1, 1] = 0;
-        #measures.dudx_hat[1, 1] = 0;
-        #measures.dudy_hat[1, 1] = 0;
-        #measures.dvdx_hat[1, 1] = 0;
-        #measures.dvdy_hat[1, 1] = 0;
-        
+     
         CUDA.CUBLAS.mul!(measures.u, solver1.irfft_plan_padded, measures.u_hat);
         CUDA.CUBLAS.mul!(measures.v, solver1.irfft_plan_padded, measures.v_hat);
         CUDA.CUBLAS.mul!(measures.dudx, solver1.irfft_plan_padded, measures.dudx_hat);
@@ -158,9 +114,6 @@ if !isdefined(@__MODULE__, :calc_flow_measures_iter)
 
         view(measures.dissipation_rate, iter) .= 1 / (4 * pi^2 * solver1.Re) * measures.weighting * reduce(+, measures.D_arr);
         view(measures.EIR, iter) .= 1 / (2pi)^2 * measures.weighting * reduce(+, measures.I_arr);
-        
-        #NumericalIntegration.integrate((solver1.x_arr, solver1.y_arr), measures.D_arr);
-        #measures.dissipation_rate[iter] = 1 / (4 * pi^2 * solver1.Re) * NumericalIntegration.integrate((solver1.x_arr, solver1.y_arr), measures.D_arr);
-        #measures.EIR[iter] = 1 / (2pi)^2 * NumericalIntegration.integrate((solver1.x_arr, solver1.y_arr), measures.I_arr);
+
     end;
 end;

@@ -24,7 +24,7 @@ using kGPU_M
     y_cutoff = 100;
 
     function source_fn(x, y)
-        return -4 * sin(4 * y);
+        return -4 * cos(4 * y);
     end;
 
     source = [source_fn(x, y) for x in xs, y in ys];
@@ -34,11 +34,13 @@ using kGPU_M
 
     solver_GPU = kGPU_M.solver{CUDA.CuArray, kGPU_M.GPU_rfft_type64, kGPU_M.GPU_irfft_type64}();
     kGPU_M.init_solver(solver_GPU, dt, Re, max_iter, xs, ys, x_cutoff, y_cutoff, ω0, source_hat, forcing_freq);
-    solver_CPU = Adapt.adapt_structure(Array, solver_GPU);
-
+    
     kGPU_M.run(solver_GPU, max_iter);
+    solver_CPU = Adapt.adapt_structure(Array, solver_GPU);
+    solver_GPU = Adapt.adapt_structure(CuArray, solver_CPU);
 
-    #measures = kGPU_M.flow_measures{CuArray}(solver_GPU);
-    #kGPU_M.calc_flow_measures(solver_GPU, measures, 10);
+    measures = kGPU_M.flow_measures{Array}(solver_CPU);
+    temp_arr = Array(repeat([0.0], x_len, y_len));
+    kGPU_M.calc_flow_measures(solver_CPU, measures, 1, temp_arr);
     
 end

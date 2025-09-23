@@ -5,7 +5,6 @@ include("typedefs.jl")
 
 #=
 Fourier array type consisting of padded array in both real and Fourier space
-File includes Fourier_array struct and the corresponding Adapt.adapt_structure
 =#
 
 
