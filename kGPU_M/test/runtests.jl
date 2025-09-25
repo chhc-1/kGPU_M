@@ -42,5 +42,7 @@ using kGPU_M
     measures = kGPU_M.flow_measures{Array}(solver_CPU);
     temp_arr = Array(repeat([0.0], x_len, y_len));
     kGPU_M.calc_flow_measures(solver_CPU, measures, 1, temp_arr);
+
+    flow_data1 = kGPU_M.calc_physical_data(solver_GPU);
     
 end

@@ -23,7 +23,7 @@ if !isdefined(@__MODULE__, :solver)
         y_arr::Arraytype #CUDA.CuArray{Float64, 2};
         n::Int64; # Forcing frequency
 
-        ω_arr::Union{Float64, Arraytype} # float array type containing all values of ω in real sapce #CUDA.CuArray{Float64, 3}; # contains real space ω values
+        ω_arr::Union{ComplexF64, Arraytype} # float array type containing all values of ω in Fourier sapce #CUDA.CuArray{Float64, 3}; # contains real space ω values
         ω_temp::Union{Float64, Arraytype} # float array type containing temporary ω in real space #CUDA.CuArray{Float64, 2}; # temporary storage for ω values -> not necesary if can fix mul! not working on selected array size?
         ω0::Arraytype # float array type containing initial condition in real space #CUDA.CuArray{Float64, 2} # initial condition in real space
         ω_hat_prev::Arraytype # complex array type containing previous ω in Fourier space #CUDA.CuArray{ComplexF64, 2}; # previous ω in Fourier space
@@ -79,6 +79,9 @@ if !isdefined(@__MODULE__, :init_solver)
             x_cutoff::Int64, y_cutoff::Int64, ω0::arr_type, source_hat::arr_type, Forcing_freq::Int64) where {Arraytype, rfft_t, irfft_t}
         @assert(size(x_arr, 2) == 1)
         @assert(size(y_arr, 2) == 1)
+
+        @assert(convert(Int64, size(x_arr, 1) * 2 / 3) == x_cutoff);
+        @assert(convert(Int64, size(y_arr, 1) * 2 / 3) == y_cutoff);
         
         solver1.dt = dt;
         solver1.Re = Re;
@@ -105,7 +108,7 @@ if !isdefined(@__MODULE__, :init_solver)
         calc_solver_base(solver1);
 
         # initialise ω terms
-        solver1.ω_arr = Arraytype{Float64}(repeat([0.0], solver1.x_len, solver1.y_len, solver1.n_iter));
+        solver1.ω_arr = Arraytype{ComplexF64}(repeat([0.0+0.0*im], solver1.N1r_padded, solver1.N2_padded, solver1.n_iter));
         solver1.ω_temp = Arraytype{Float64}(repeat([0.0], solver1.x_len, solver1.y_len));
         solver1.ω_hat_intermediate = Arraytype{ComplexF64}(repeat([0.0 + 0.0*im], solver1.N1r_padded, solver1.N2_padded));
         solver1.ω_hat_new = Arraytype{ComplexF64}(repeat([0.0 + 0.0*im], solver1.N1r_padded, solver1.N2_padded));

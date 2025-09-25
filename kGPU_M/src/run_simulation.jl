@@ -21,10 +21,12 @@ end
 function iter(solver1::solver, iteration::Int64)
     update(solver1);
 
+    view(solver1.ω_arr, 1:solver1.N1r_padded, 1:solver1.N2_padded, iteration) .= view(solver1.ω_hat_new, 1:solver1.N1r_padded, 1:solver1.N2_padded);
+
     CUDA.copyto!(solver1.ω_hat_prev, solver1.ω_hat_new);
 
-    CUDA.CUBLAS.mul!(solver1.ω_temp, solver1.irfft_plan_padded, solver1.ω_hat_new);
-    view(solver1.ω_arr, 1:solver1.x_len, 1:solver1.y_len, iteration) .= solver1.ω_temp;
+    #CUDA.CUBLAS.mul!(solver1.ω_temp, solver1.irfft_plan_padded, solver1.ω_hat_new);
+    
     return nothing;
 end;
 

@@ -60,8 +60,9 @@ end;
 
 if !isdefined(@__MODULE__, :calc_flow_measures)
     function calc_flow_measures(solver1::solver{Arraytype, rfft_t, irfft_t}, measures::flow_measures, iter::Int64, temp_arr::arr_type) where {Arraytype, rfft_t, irfft_t}
-        view(temp_arr, 1:solver1.N1_padded, 1:solver1.N2_padded) .= view(solver1.ω_arr, 1:solver1.N1_padded, 1:solver1.N2_padded, iter);
-        CUDA.CUBLAS.mul!(solver1.ω_hat_new, solver1.rfft_plan_padded, temp_arr);
+        #view(temp_arr, 1:solver1.N1_padded, 1:solver1.N2_padded) .= view(solver1.ω_arr, 1:solver1.N1_padded, 1:solver1.N2_padded, iter);
+        #CUDA.CUBLAS.mul!(solver1.ω_hat_new, solver1.rfft_plan_padded, temp_arr);
+        view(solver1.ω_hat_new, 1:solver1.N1r_padded, 1:solver1.N2_padded) .= view(solver1.ω_arr, 1:solver1.N1r_padded, 1:solver1.N2_padded, iter)
 
         measures.u_hat .= im .* solver1.ω_hat_new .* solver1.ky ./ solver1.kxy2;
         measures.v_hat .= -im .* solver1.ω_hat_new .* solver1.kx ./ solver1.kxy2;
@@ -115,5 +116,21 @@ if !isdefined(@__MODULE__, :calc_flow_measures_iter)
         view(measures.dissipation_rate, iter) .= 1 / (4 * pi^2 * solver1.Re) * measures.weighting * reduce(+, measures.D_arr);
         view(measures.EIR, iter) .= 1 / (2pi)^2 * measures.weighting * reduce(+, measures.I_arr);
 
+    end;
+end;
+
+if !isdefined(@__MODULE__, :calc_physical_data)
+    # function to compute flow data in physical space
+    function calc_physical_data(solver1::solver{Arraytype}) where Arraytype
+        real_data = Arraytype{Float64}(repeat([0.0], solver1.x_len, solver1.y_len, solver1.n_iter))
+        #temp_arr = CuArray{Float64}(repeat([0.0], solver1.x_len, solver1.y_len))
+        #temp_arr_hat = Array{ComplexF64}(repeat([0.0], solver1.N1r_padded, solver1.N2_padded))
+        for i in 1:solver1.n_iter
+            view(solver1.ω_hat_new, 1:solver1.N1r_padded, 1:solver1.N2_padded) .= view(solver1.ω_arr, 1:solver1.N1r_padded, 1:solver1.N2_padded, i)
+            CUDA.CUBLAS.mul!(solver1.ω_temp, solver1.irfft_plan_padded, solver1.ω_hat_new);
+            view(real_data, 1:solver1.x_len, 1:solver1.y_len, i) .= view(solver1.ω_temp, 1:solver1.x_len, 1:solver1.y_len);
+        end;
+        
+        return real_data;
     end;
 end;
